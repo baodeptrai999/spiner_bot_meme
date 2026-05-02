@@ -73,6 +73,8 @@ pub struct TelegramUiState {
     pub selected_wallet_id: Option<i32>,
     pub trading: TradingParams,
     pub is_running: bool,
+    /// Anti-Rug filter config — toggleable qua Telegram UI.
+    pub anti_rug: crate::modules::anti_rug::AntiRugConfig,
     pending_input: PendingInput,
 }
 
@@ -92,6 +94,7 @@ impl Default for TelegramUiState {
                 tip_fee_sol: default_third_party_fee(),
             },
             is_running: false,
+            anti_rug: crate::modules::anti_rug::AntiRugConfig::default(),
             pending_input: PendingInput::None,
         }
     }
@@ -504,6 +507,59 @@ async fn handle_callback(
         "go_main" => {
             show_main_menu(&bot, chat_id, &state, q.message.as_ref()).await?;
         }
+        // ── Anti-Rug Toggle Callbacks ─────────────────────────────────
+        "antirug_menu" => {
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_master" => {
+            let mut g = state.write().await;
+            g.anti_rug.enabled = !g.anti_rug.enabled;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_warn" => {
+            let mut g = state.write().await;
+            g.anti_rug.warn_only = !g.anti_rug.warn_only;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_m1" => {
+            let mut g = state.write().await;
+            g.anti_rug.holder_filter_enabled = !g.anti_rug.holder_filter_enabled;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_m2" => {
+            let mut g = state.write().await;
+            g.anti_rug.panic_sell_enabled = !g.anti_rug.panic_sell_enabled;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_m3" => {
+            let mut g = state.write().await;
+            g.anti_rug.dev_profiler_enabled = !g.anti_rug.dev_profiler_enabled;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_m4" => {
+            let mut g = state.write().await;
+            g.anti_rug.genesis_detector_enabled = !g.anti_rug.genesis_detector_enabled;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
+        "ar_toggle_m5" => {
+            let mut g = state.write().await;
+            g.anti_rug.metadata_checker_enabled = !g.anti_rug.metadata_checker_enabled;
+            drop(g);
+            sync_bot_run_state_from_ui(&state).await;
+            send_antirug_menu(&bot, chat_id, &state).await?;
+        }
         _ => {}
     }
 
@@ -576,6 +632,7 @@ fn trading_menu_keyboard(_is_running: bool, trading: &TradingParams) -> InlineKe
         vec![InlineKeyboardButton::callback(trail_stop_lbl, "trading_trailing_stop")],
         vec![InlineKeyboardButton::callback(pri_lbl, "trading_priority_fee")],
         vec![InlineKeyboardButton::callback(tip_lbl, "trading_tip_fee")],
+        vec![InlineKeyboardButton::callback("🛡️ Anti-Rug Settings", "antirug_menu")],
         vec![InlineKeyboardButton::callback("Back to main menu", "go_main")],
     ])
 }
@@ -1543,4 +1600,55 @@ async fn sync_bot_run_state_from_ui(state: &Arc<RwLock<TelegramUiState>>) {
     run.trading.trailing_stop = snapshot.trading.trailing_stop;
     run.trading.priority_fee_micro_lamports = snapshot.trading.priority_fee_micro_lamports;
     run.trading.tip_fee_sol = snapshot.trading.tip_fee_sol;
+    // Sync Anti-Rug config
+    run.anti_rug = snapshot.anti_rug.clone();
+}
+
+/// Hiển thị menu Anti-Rug settings với toggle buttons.
+async fn send_antirug_menu(
+    bot: &Bot,
+    chat_id: ChatId,
+    state: &Arc<RwLock<TelegramUiState>>,
+) -> BotResult {
+    let ar = state.read().await.anti_rug.clone();
+    let on = "✅";
+    let off = "❌";
+
+    let master = if ar.enabled { on } else { off };
+    let warn = if ar.warn_only { on } else { off };
+    let m1 = if ar.holder_filter_enabled { on } else { off };
+    let m2 = if ar.panic_sell_enabled { on } else { off };
+    let m3 = if ar.dev_profiler_enabled { on } else { off };
+    let m4 = if ar.genesis_detector_enabled { on } else { off };
+    let m5 = if ar.metadata_checker_enabled { on } else { off };
+
+    let kb = InlineKeyboardMarkup::new(vec![
+        vec![InlineKeyboardButton::callback(
+            format!("{master} Anti-Rug Master Switch"), "ar_toggle_master",
+        )],
+        vec![InlineKeyboardButton::callback(
+            format!("{warn} Warn-Only Mode (no block)"), "ar_toggle_warn",
+        )],
+        vec![InlineKeyboardButton::callback(
+            format!("{m1} M1: Holder Analyzer"), "ar_toggle_m1",
+        )],
+        vec![InlineKeyboardButton::callback(
+            format!("{m2} M2: Panic-Sell Monitor"), "ar_toggle_m2",
+        )],
+        vec![InlineKeyboardButton::callback(
+            format!("{m3} M3: Dev Wallet Profiler"), "ar_toggle_m3",
+        )],
+        vec![InlineKeyboardButton::callback(
+            format!("{m4} M4: Genesis Detector"), "ar_toggle_m4",
+        )],
+        vec![InlineKeyboardButton::callback(
+            format!("{m5} M5: Metadata Checker"), "ar_toggle_m5",
+        )],
+        vec![InlineKeyboardButton::callback("⬅️ Back to Trading", "main_trading")],
+    ]);
+
+    bot.send_message(chat_id, "🛡️ Anti-Rug Intelligence Settings\n\nTap to toggle each module:")
+        .reply_markup(kb)
+        .await?;
+    Ok(())
 }
